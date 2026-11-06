@@ -1,0 +1,382 @@
+{
+  "schema_version": "1.0",
+  "scenario_meta": {
+    "id": "icu_scenario_fever_hypotension_v1",
+    "title": "ΜΕΘ: Πυρετός & Υπόταση - Κλιμάκωση και Τεκμηρίωση",
+    "description": "Δεύτερο rule-based σενάριο που ελέγχει την επεκτασιμότητα της εφαρμογής με διαφορετικά ζωτικά, διαφορετική κλινική ροή και νέα required fields στο EHR.",
+    "estimated_duration_minutes": 7,
+    "difficulty": "Intermediate",
+    "learning_goals": [
+      "Αναγνώριση μεταβολής ζωτικών ως μεταβλητών σεναρίου",
+      "Χρήση patient/monitor hotspots για αρχική εκτίμηση",
+      "Τεκμηρίωση υποστηρικτικής παρέμβασης σε EHR gate",
+      "Κλιμάκωση και καταγραφή επικοινωνίας σε δεύτερο gate",
+      "Επίδειξη ότι νέο περιστατικό προστίθεται μόνο με νέο JSON"
+    ],
+    "implementation_notes": {
+      "scenario_extension": "Το σενάριο χρησιμοποιεί την ίδια 3D εφαρμογή και προστέθηκε ως ανεξάρτητο JSON στο φάκελο scenarios.",
+      "score_ui": "Το UI εμφανίζει Performance Score 0-100% με βάση raw_score_points / theoretical_max_points."
+    }
+  },
+  "initial_state": {
+    "time_elapsed": 0,
+    "current_score": 100,
+    "flags": {
+      "assessment_complete": false,
+      "monitor_reviewed": false,
+      "fluid_intervention_complete": false,
+      "documentation_1_complete": false,
+      "escalation_complete": false,
+      "documentation_2_complete": false
+    },
+    "vitals": {
+      "hr": 118,
+      "spo2": 96,
+      "rr": 22,
+      "bp": "90/55",
+      "temp": 38.8
+    },
+    "ui": {
+      "active_hotspots": [
+        "hs_monitor",
+        "hs_patient",
+        "hs_ventilator",
+        "hs_ehr",
+        "hs_call"
+      ],
+      "monitor_alert": true
+    }
+  },
+  "hotspots": [
+    {
+      "id": "hs_monitor",
+      "label": "Μόνιτορ Ζωτικών (Monitor)"
+    },
+    {
+      "id": "hs_patient",
+      "label": "Ασθενής/Κλίνη (Patient)"
+    },
+    {
+      "id": "hs_ventilator",
+      "label": "Υποστηρικτικός Εξοπλισμός / Αναπνευστήρας"
+    },
+    {
+      "id": "hs_ehr",
+      "label": "Τερματικό EHR (e-Health)"
+    },
+    {
+      "id": "hs_call",
+      "label": "Κουμπί Κλήσης (Call Button)"
+    }
+  ],
+  "ehr_config": {
+    "forms": {
+      "assessment_form": {
+        "title": "Κλινική Αξιολόγηση",
+        "fields": [
+          "observation",
+          "skin_color",
+          "consciousness"
+        ]
+      },
+      "intervention_form": {
+        "title": "Παρεμβάσεις / Υποστήριξη",
+        "fields": [
+          "device",
+          "fluid_rate",
+          "intervention_note"
+        ]
+      },
+      "communication_log": {
+        "title": "Ημερολόγιο Επικοινωνίας",
+        "fields": [
+          "recipient",
+          "reason",
+          "outcome"
+        ]
+      }
+    }
+  },
+  "rules": {
+    "global_rules": [
+      {
+        "id": "rule_fever_alert",
+        "condition": {
+          "vitals.temp": {
+            "gt": 38.5
+          }
+        },
+        "effects": [
+          {
+            "type": "ui_visual",
+            "target": "hs_monitor",
+            "state": "blinking_red"
+          },
+          {
+            "type": "ui_toast",
+            "style": "danger",
+            "message": "ΣΥΝΑΓΕΡΜΟΣ: Θερμοκρασία > 38.5°C και υπόταση - απαιτείται εκτίμηση."
+          }
+        ]
+      },
+      {
+        "id": "rule_tachycardia_alert",
+        "condition": {
+          "vitals.hr": {
+            "gt": 125
+          }
+        },
+        "effects": [
+          {
+            "type": "ui_visual",
+            "target": "hs_monitor",
+            "state": "blinking_red"
+          },
+          {
+            "type": "ui_toast",
+            "style": "warning",
+            "message": "Προειδοποίηση: HR > 125 μετά από καθυστέρηση."
+          }
+        ]
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "id": "n1_start",
+      "type": "message",
+      "text": "Βρίσκεστε στη ΜΕΘ. Ο ασθενής στην κλίνη 1 έχει πυρετό, ταχυκαρδία και χαμηλή αρτηριακή πίεση (Temp: 38.8°C, HR: 118, BP: 90/55).",
+      "next_node_id": "n2_triage_decision"
+    },
+    {
+      "id": "n2_triage_decision",
+      "type": "decision",
+      "text": "Ποια είναι η πρώτη σου ενέργεια για την αρχική εκτίμηση;",
+      "options": [
+        {
+          "id": "opt_assess_patient",
+          "label": "Άμεση αξιολόγηση ασθενούς στην κλίνη",
+          "target_hotspot": "hs_patient",
+          "effects": {
+            "score_delta": 10,
+            "state_update": {
+              "flags.assessment_complete": true
+            },
+            "toast": "Παρατηρείς αδυναμία, θερμό δέρμα και γρήγορη αναπνοή."
+          },
+          "next_node_id": "n3_support_decision"
+        },
+        {
+          "id": "opt_review_monitor",
+          "label": "Έλεγχος τάσεων στο μόνιτορ",
+          "target_hotspot": "hs_monitor",
+          "effects": {
+            "score_delta": 5,
+            "state_update": {
+              "flags.monitor_reviewed": true
+            },
+            "toast": "Βλέπεις σταδιακή άνοδο HR και πτώση BP στα τελευταία λεπτά."
+          },
+          "next_node_id": "n3_support_decision"
+        }
+      ],
+      "timeout": {
+        "seconds": 25,
+        "on_timeout_effects": {
+          "vitals_update": {
+            "hr": 128,
+            "bp": "85/50",
+            "rr": 26
+          },
+          "score_delta": -10,
+          "toast": "⚠️ Καθυστέρηση! Η πίεση έπεσε σε 85/50 και το HR ανέβηκε σε 128."
+        },
+        "next_node_id": "n3_support_decision"
+      }
+    },
+    {
+      "id": "n3_support_decision",
+      "type": "decision",
+      "text": "Ο ασθενής χρειάζεται υποστηρικτική παρέμβαση και καταγραφή της ενέργειας.",
+      "options": [
+        {
+          "id": "opt_support_fluids",
+          "label": "Έλεγχος γραμμής/υποστηρικτικού εξοπλισμού και έναρξη υγρών",
+          "target_hotspot": "hs_ventilator",
+          "effects": {
+            "state_update": {
+              "flags.fluid_intervention_complete": true
+            },
+            "vitals_update": {
+              "hr": 108,
+              "bp": "98/62",
+              "rr": 22
+            },
+            "score_delta": 20,
+            "toast": "✅ Η υποστηρικτική παρέμβαση καταγράφηκε ως ενέργεια σεναρίου. Τα ζωτικά βελτιώνονται."
+          },
+          "next_node_id": "n4_gate_documentation_1"
+        },
+        {
+          "id": "opt_wait_no_action",
+          "label": "Αναμονή χωρίς παρέμβαση",
+          "target_hotspot": "hs_monitor",
+          "effects": {
+            "vitals_update": {
+              "hr": 132,
+              "bp": "82/48",
+              "rr": 28
+            },
+            "score_delta": -20,
+            "toast": "⛔ Η αναμονή επιδεινώνει τις μεταβλητές του σεναρίου."
+          },
+          "next_node_id": "n4_gate_documentation_1"
+        }
+      ]
+    },
+    {
+      "id": "n4_gate_documentation_1",
+      "type": "gate",
+      "text": "🛑 GATE: Τεκμηρίωση αρχικής αξιολόγησης και υποστηρικτικής παρέμβασης.",
+      "description": "Το σύστημα μπλοκάρει μέχρι να συμπληρωθούν τα απαιτούμενα πεδία στο EHR.",
+      "gate_requirements": {
+        "target_hotspot": "hs_ehr",
+        "required_forms": [
+          {
+            "form_id": "assessment_form",
+            "fields": [
+              "observation"
+            ]
+          },
+          {
+            "form_id": "intervention_form",
+            "fields": [
+              "fluid_rate",
+              "intervention_note"
+            ]
+          }
+        ]
+      },
+      "feedback_blocked": "⚠️ Πρέπει να συμπληρώσεις observation, fluid_rate και intervention_note στο EHR.",
+      "feedback_success": "✅ Η τεκμηρίωση αξιολόγησης και υποστήριξης αποθηκεύτηκε.",
+      "effects_on_pass": {
+        "state_update": {
+          "flags.documentation_1_complete": true
+        },
+        "score_delta": 10
+      },
+      "next_node_id": "n5_reassessment"
+    },
+    {
+      "id": "n5_reassessment",
+      "type": "message",
+      "text": "10 λεπτά αργότερα... Τα ζωτικά είναι βελτιωμένα αλλά η θερμοκρασία παραμένει αυξημένη. Χρειάζεται απόφαση για κλιμάκωση/ενημέρωση.",
+      "next_node_id": "n6_escalation_decision"
+    },
+    {
+      "id": "n6_escalation_decision",
+      "type": "decision",
+      "text": "Ποια είναι η καταλληλότερη επόμενη ενέργεια στη ροή σεναρίου;",
+      "options": [
+        {
+          "id": "opt_call_physician",
+          "label": "Κλήση ιατρού για κλιμάκωση",
+          "target_hotspot": "hs_call",
+          "effects": {
+            "state_update": {
+              "flags.escalation_complete": true
+            },
+            "score_delta": 10,
+            "toast": "Έγινε κλήση στον εφημερεύοντα για περαιτέρω οδηγίες."
+          },
+          "next_node_id": "n7_gate_documentation_2"
+        },
+        {
+          "id": "opt_monitor_only",
+          "label": "Συνέχιση παρακολούθησης χωρίς κλήση",
+          "target_hotspot": "hs_monitor",
+          "effects": {
+            "score_delta": -5,
+            "toast": "Συνεχίζεις την παρακολούθηση, αλλά δεν έγινε κλιμάκωση."
+          },
+          "next_node_id": "n8_end_scenario"
+        }
+      ]
+    },
+    {
+      "id": "n7_gate_documentation_2",
+      "type": "gate",
+      "text": "🛑 GATE: Καταγραφή επικοινωνίας με ιατρό.",
+      "description": "Κατάγραψε σε ποιον έγινε η κλήση, γιατί έγινε και ποιο ήταν το αποτέλεσμα.",
+      "gate_requirements": {
+        "target_hotspot": "hs_ehr",
+        "required_forms": [
+          {
+            "form_id": "communication_log",
+            "fields": [
+              "recipient",
+              "reason",
+              "outcome"
+            ]
+          }
+        ]
+      },
+      "feedback_blocked": "⚠️ Εκκρεμεί η πλήρης καταγραφή της επικοινωνίας στο EHR.",
+      "feedback_success": "✅ Η επικοινωνία τεκμηριώθηκε πλήρως.",
+      "effects_on_pass": {
+        "state_update": {
+          "flags.documentation_2_complete": true
+        },
+        "score_delta": 5
+      },
+      "next_node_id": "n8_end_scenario"
+    },
+    {
+      "id": "n8_end_scenario",
+      "type": "end",
+      "text": "Το δεύτερο σενάριο ολοκληρώθηκε.",
+      "debrief_config": {
+        "show_score": true,
+        "show_decision_path": true,
+        "highlight_missed_docs": true,
+        "export_log": true,
+        "checklist": [
+          {
+            "label": "Αρχική αξιολόγηση ή έλεγχος monitor",
+            "decision_node": "n2_triage_decision"
+          },
+          {
+            "label": "Υποστηρικτική παρέμβαση",
+            "flag": "fluid_intervention_complete"
+          },
+          {
+            "label": "Τεκμηρίωση αρχικής αξιολόγησης/παρέμβασης",
+            "flag": "documentation_1_complete"
+          },
+          {
+            "label": "Απόφαση κλιμάκωσης ή παρακολούθησης",
+            "decision_node": "n6_escalation_decision"
+          },
+          {
+            "label": "Καταγραφή επικοινωνίας όταν έγινε κλήση",
+            "required_if_flag": "escalation_complete",
+            "then_flag": "documentation_2_complete"
+          }
+        ]
+      }
+    }
+  ],
+  "logging": {
+    "enabled": true,
+    "log_events": [
+      "NODE_ENTER",
+      "HOTSPOT_INTERACTION",
+      "OPTION_SELECTED",
+      "EHR_SUBMIT",
+      "VITALS_CHANGE",
+      "GATE_BLOCKED",
+      "GATE_PASSED"
+    ],
+    "export_format": "JSON"
+  }
+}

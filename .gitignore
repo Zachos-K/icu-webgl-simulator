@@ -1,0 +1,17 @@
+# OS / editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python cache (local server)
+__pycache__/
+*.py[cod]
+
+# Local logs / exported simulation data
+*.log
+exports/
+
+# Temporary files
+*.tmp
+*.bak

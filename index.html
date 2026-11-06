@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="el">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>XR ICU Trainer 3D - WebGL EHR Decision Tree</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="toastStack" aria-live="polite" aria-atomic="true"></div>
+
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-mark">3D</div>
+      <div>
+        <h1>XR ICU Trainer 3D</h1>
+        <p>Πραγματικό WebGL περιβάλλον ΜΕΘ με EHR, hotspots και rule-based decision tree</p>
+      </div>
+    </div>
+    <div class="scenario-tools" aria-label="Εργαλεία σεναρίου">
+      <label for="scenarioSelect">Σενάριο</label>
+      <select id="scenarioSelect">
+        <option value="scenarios/icu_scenario_hypoxia_v1.json">Σενάριο 1: Υποξαιμία & Αναπνευστήρας</option>
+        <option value="scenarios/icu_scenario_fever_hypotension_v1.json">Σενάριο 2: Πυρετός & Υπόταση</option>
+      </select>
+      <button id="loadScenarioBtn" class="secondary">Φόρτωση από λίστα</button>
+      <label class="file-btn" for="scenarioFile">Φόρτωση JSON</label>
+      <input id="scenarioFile" type="file" accept="application/json,.json" />
+      <button id="resetBtn" class="secondary">Reset</button>
+      <button id="helpBtn" class="secondary">Hints</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <section class="scene-card" aria-label="Πραγματικό τρισδιάστατο WebGL περιβάλλον ΜΕΘ">
+      <div class="scene-toolbar">
+        <div>
+          <strong id="scenarioTitle">Φόρτωση σεναρίου...</strong>
+          <span id="scenarioMeta" class="muted"></span>
+        </div>
+        <div class="toolbar-right">
+          <div class="pill" id="systemStatePill">Κατάσταση: αρχικοποίηση</div>
+          <button class="tiny" id="viewOverview">Overview</button>
+          <button class="tiny" id="viewBed">Κλίνη</button>
+          <button class="tiny" id="viewMonitor">Monitor</button>
+          <button class="tiny" id="viewEhr">EHR</button>
+          <button class="tiny secondary" id="soundToggleBtn" aria-pressed="false">Ήχος: Off</button>
+        </div>
+      </div>
+
+      <div class="gl-room" id="glRoom">
+        <canvas id="glCanvas" aria-label="WebGL τρισδιάστατη σκηνή Μονάδας Εντατικής Θεραπείας"></canvas>
+        <canvas id="waveCanvas" width="320" height="115" aria-label="Δυναμικές κυματομορφές μόνιτορ"></canvas>
+        <div id="hotspotLayer" class="hotspot-layer" aria-label="3D hotspots"></div>
+        <div id="equipmentLabels" class="equipment-label-layer" aria-hidden="true"></div>
+        <div id="monitorHud" class="monitor-hud" aria-hidden="true">
+          <div><span>HR</span><strong id="vitalHr">--</strong></div>
+          <div><span>SpO2</span><strong id="vitalSpo2">--</strong></div>
+          <div><span>RR</span><strong id="vitalRr">--</strong></div>
+        </div>
+        <div id="cameraHelp" class="camera-help">Σύρε με το ποντίκι για περιστροφή - Wheel για zoom - WASD για μετακίνηση</div>
+        <div id="objectTooltip" class="object-tooltip hidden"></div>
+      </div>
+    </section>
+
+    <aside class="control-panel" aria-label="Πάνελ σεναρίου">
+      <section class="card status-card">
+        <div class="split-title">
+          <h2>Κατάσταση ασθενή</h2>
+          <span id="scoreBadge" class="score">Performance --%</span>
+        </div>
+        <dl class="vitals-grid">
+          <div><dt>HR</dt><dd id="sideHr">--</dd></div>
+          <div><dt>SpO2</dt><dd id="sideSpo2">--</dd></div>
+          <div><dt>RR</dt><dd id="sideRr">--</dd></div>
+          <div><dt>BP</dt><dd id="sideBp">--</dd></div>
+          <div><dt>Temp</dt><dd id="sideTemp">--</dd></div>
+        </dl>
+      </section>
+
+      <section class="card scenario-card">
+        <div class="split-title">
+          <h2>Ροή σεναρίου</h2>
+          <span id="nodeBadge" class="node-badge">node</span>
+        </div>
+        <p id="nodeText" class="node-text">...</p>
+        <div id="timerBox" class="timer hidden" role="timer"></div>
+        <div id="nodeActions" class="node-actions"></div>
+      </section>
+
+      <section class="card log-card">
+        <div class="split-title">
+          <h2>Live log</h2>
+          <button id="exportQuickBtn" class="tiny">Export JSON</button>
+        </div>
+        <ol id="logPreview" class="log-preview"></ol>
+      </section>
+    </aside>
+  </main>
+
+  <dialog id="ehrDialog" class="modal wide-modal">
+    <form method="dialog" class="modal-shell">
+      <header class="modal-header">
+        <div>
+          <h2>Ηλεκτρονικός Φάκελος Υγείας (EHR)</h2>
+          <p>Ανάγνωση τάσεων ζωτικών και τεκμηρίωση ενεργειών</p>
+        </div>
+        <button class="icon-btn" value="cancel" aria-label="Κλείσιμο">×</button>
+      </header>
+      <div class="ehr-layout">
+        <aside class="ehr-sidebar">
+          <button type="button" class="ehr-tab active" data-tab="overview">Τάσεις ζωτικών</button>
+          <button type="button" class="ehr-tab" data-tab="assessment_form">Κλινική Αξιολόγηση</button>
+          <button type="button" class="ehr-tab" data-tab="intervention_form">Παρεμβάσεις</button>
+          <button type="button" class="ehr-tab" data-tab="communication_log">Επικοινωνία</button>
+        </aside>
+        <section class="ehr-content">
+          <div id="ehrOverview" class="ehr-pane active-pane">
+            <h3>Τάσεις ζωτικών σημείων</h3>
+            <canvas id="trendCanvas" width="620" height="210"></canvas>
+            <table class="compact-table">
+              <thead><tr><th>Χρόνος</th><th>HR</th><th>SpO2</th><th>RR</th><th>Σχόλιο</th></tr></thead>
+              <tbody id="trendRows"></tbody>
+            </table>
+          </div>
+          <div id="ehrForms"></div>
+        </section>
+      </div>
+      <footer class="modal-footer">
+        <span id="ehrSaveStatus" class="muted">Οι αποθηκεύσεις καταγράφονται στο log.</span>
+        <button value="cancel" class="secondary">Κλείσιμο</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="infoDialog" class="modal">
+    <form method="dialog" class="modal-shell">
+      <header class="modal-header">
+        <div>
+          <h2 id="infoTitle">Πληροφορία</h2>
+          <p id="infoSubtitle"></p>
+        </div>
+        <button class="icon-btn" value="cancel" aria-label="Κλείσιμο">×</button>
+      </header>
+      <div id="infoBody" class="info-body"></div>
+      <footer class="modal-footer"><button value="cancel" class="secondary">Κλείσιμο</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="helpDialog" class="modal">
+    <form method="dialog" class="modal-shell">
+      <header class="modal-header">
+        <div>
+          <h2>Hints</h2>
+          <p>Γρήγορες οδηγίες χρήσης της 3D προσομοίωσης</p>
+        </div>
+        <button class="icon-btn" value="cancel" aria-label="Κλείσιμο">×</button>
+      </header>
+      <div class="help-body">
+        <h3>3D περιήγηση</h3>
+        <p>Η σκηνή είναι WebGL: σύρε με το ποντίκι για περιστροφή, χρησιμοποίησε το wheel για zoom και τα πλήκτρα WASD για μετακίνηση του κέντρου προβολής. Τα κουμπιά Overview/Κλίνη/Monitor/EHR αλλάζουν προκαθορισμένη κάμερα.</p>
+        <h3>Hotspots</h3>
+        <p>Πάτησε τα 3D labels πάνω στα αντικείμενα της ΜΕΘ. Αν το ενεργό node ζητά συγκεκριμένο hotspot, η επιλογή εφαρμόζεται αυτόματα. Αλλιώς ανοίγει σχετικό ενημερωτικό panel.</p>
+        <h3>Τεκμηρίωση EHR</h3>
+        <p>Όταν εμφανιστεί Gate, άνοιξε το EHR, συμπλήρωσε τα απαιτούμενα πεδία και πάτησε «Αποθήκευση». Η ροή δεν συνεχίζει αν λείπει υποχρεωτικό πεδίο.</p>
+        <h3>Export</h3>
+        <p>Στο τέλος εμφανίζεται Debrief με σκορ, διαδρομή αποφάσεων και κουμπιά εξαγωγής log σε JSON/CSV.</p>
+      </div>
+      <footer class="modal-footer"><button value="cancel" class="secondary">Κλείσιμο</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="debriefDialog" class="modal wide-modal">
+    <form method="dialog" class="modal-shell">
+      <header class="modal-header">
+        <div>
+          <h2>Debriefing σεναρίου</h2>
+          <p>Απολογισμός ενεργειών, τεκμηρίωσης και απόφασης</p>
+        </div>
+        <button class="icon-btn" value="cancel" aria-label="Κλείσιμο">×</button>
+      </header>
+      <div id="debriefContent" class="debrief-content"></div>
+      <footer class="modal-footer">
+        <button type="button" id="exportJsonBtn">Export JSON</button>
+        <button type="button" id="exportCsvBtn">Export CSV</button>
+        <button value="cancel" class="secondary">Κλείσιμο</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
